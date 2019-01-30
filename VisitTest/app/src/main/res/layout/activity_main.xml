@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:id="@+id/buttonPanel"
+        android:weightSum="4">
+
+        <Button
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Start"
+            android:id="@+id/start"
+            android:layout_weight="1"
+            android:onClick="onStart"/>
+        <Button
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Stop"
+            android:id="@+id/stop"
+            android:layout_weight="1"
+            android:layout_toRightOf="@id/start"
+            android:onClick="onStop"/>
+        <Button
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_toRightOf="@id/stop"
+            android:text="Share"
+            android:id="@+id/share"
+            android:layout_weight="1"
+            android:onClick="onShare"/>
+        <Button
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_toRightOf="@id/share"
+            android:text="Reset"
+            android:id="@+id/reset"
+            android:layout_weight="1"
+            android:onClick="onReset"/>
+    </LinearLayout>
+
+
+
+    <TextView
+        android:id="@+id/location"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@android:color/black"
+        android:layout_marginTop="10dp"
+        android:layout_below="@id/buttonPanel"
+        android:textSize="20dp"
+        android:text="location"/>
+
+    <Button
+        android:id="@+id/maintooverlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="overlay"
+        android:layout_alignParentBottom="true"
+        android:onClick="onOverlay"/>
+
+</RelativeLayout>
