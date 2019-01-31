@@ -29,18 +29,29 @@ import com.google.android.gms.maps.model.GroundOverlayOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.Polyline;
+import com.google.android.gms.maps.model.PolylineOptions;
 import com.indooratlas.android.sdk.IALocation;
 import com.indooratlas.android.sdk.IALocationListener;
 import com.indooratlas.android.sdk.IALocationManager;
 import com.indooratlas.android.sdk.IALocationRequest;
+import com.indooratlas.android.sdk.IAOrientationListener;
+import com.indooratlas.android.sdk.IAOrientationRequest;
 import com.indooratlas.android.sdk.IARegion;
+import com.indooratlas.android.sdk.IARoute;
+import com.indooratlas.android.sdk.IAWayfindingListener;
+import com.indooratlas.android.sdk.IAWayfindingRequest;
 import com.indooratlas.android.sdk.resources.IAFloorPlan;
 import com.indooratlas.android.sdk.resources.IALatLng;
+import com.indooratlas.android.sdk.resources.IALocationListenerSupport;
 import com.squareup.picasso.Picasso;
 import com.squareup.picasso.RequestCreator;
 import com.squareup.picasso.Target;
 
-public class MapsActivity extends FragmentActivity implements OnMapReadyCallback {
+import java.util.ArrayList;
+import java.util.List;
+
+public class MapsActivity extends FragmentActivity implements GoogleMap.OnMapClickListener, OnMapReadyCallback {
 
     private static final String TAG = "IndoorAtlasExample";
 
@@ -57,6 +68,41 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     private boolean mCameraPositionNeedsUpdating = true; // update on first location
     private boolean mShowIndoorLocation = false;
     private LocationListener mloactionListener;
+    private Marker mDestinationMarker;
+    private Marker mHeadingMarker;
+    private List<Polyline> mPolylines = new ArrayList<>();
+    private IARoute mCurrentRoute;
+
+    private IAWayfindingRequest mWayfindingDestination;
+
+    private IAWayfindingListener mWayfindingListener = new IAWayfindingListener() {
+        @Override
+        public void onWayfindingUpdate(IARoute route) {
+            mCurrentRoute = route;
+            if (hasArrivedToDestination(route)) {
+                // stop wayfinding
+                showInfo("You're there!");
+                mCurrentRoute = null;
+                mWayfindingDestination = null;
+                mIALocationManager.removeWayfindingUpdates();
+            }
+            updateRouteVisualization();
+        }
+    };
+
+    private IAOrientationListener mOrientationListener = new IAOrientationListener() {
+        @Override
+        public void onHeadingChanged(long timestamp, double heading) {
+            updateHeading(heading);
+        }
+
+        @Override
+        public void onOrientationChange(long l, double[] doubles) {
+
+        }
+    };
+
+    private int mFloor;
 
     private void showBlueDot(LatLng center, double accuracyRadius, double bearing) {
         if (mCircle == null) {
@@ -70,7 +116,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                         .zIndex(1.0f)
                         .visible(true)
                         .strokeWidth(5.0f));
-                mMarker = mMap.addMarker(new MarkerOptions()
+                mHeadingMarker  = mMap.addMarker(new MarkerOptions()
                         .position(center)
                         .icon(BitmapDescriptorFactory.fromResource(R.drawable.map_blue_dot))
                         .anchor(0.5f, 0.5f)
@@ -80,13 +126,18 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         } else {
             // move existing markers position to received location
             mCircle.setCenter(center);
+            mHeadingMarker.setPosition(center);
             mCircle.setRadius(accuracyRadius);
-            mMarker.setPosition(center);
-            mMarker.setRotation((float)bearing);
         }
     }
 
-    private IALocationListener mListener = new IALocationListener() {
+    private void updateHeading(double heading) {
+        if (mHeadingMarker != null) {
+            mHeadingMarker.setRotation((float)heading);
+        }
+    }
+
+    private IALocationListener mListener = new IALocationListenerSupport() {
         @Override
         public void onLocationChanged(IALocation location) {
             Log.d(TAG, "new location received with coordinates: " + location.getLatitude()
@@ -99,10 +150,15 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
 
             final LatLng center = new LatLng(location.getLatitude(), location.getLongitude());
 
+            final int newFloor = location.getFloorLevel();
+            if (mFloor != newFloor) {
+                updateRouteVisualization();
+            }
+            mFloor = newFloor;
+
             if (mShowIndoorLocation) {
                 showBlueDot(center, location.getAccuracy(), location.getBearing());
             }
-
             // our camera position needs updating if location has significantly changed
             if (mCameraPositionNeedsUpdating) {
                 mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(center, 17.5f));
@@ -219,6 +275,14 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         // start receiving location updates & monitor region changes
         mIALocationManager.requestLocationUpdates(IALocationRequest.create(), mListener);
         mIALocationManager.registerRegionListener(mRegionListener);
+        mIALocationManager.registerOrientationListener(
+                // update if heading changes by 1 degrees or more
+                new IAOrientationRequest(1, 0),
+                mOrientationListener);
+
+        if (mWayfindingDestination != null) {
+            mIALocationManager.requestWayfindingUpdates(mWayfindingDestination, mWayfindingListener);
+        }
     }
 
     @Override
@@ -227,6 +291,11 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         // unregister location & region changes
         mIALocationManager.removeLocationUpdates(mListener);
         mIALocationManager.registerRegionListener(mRegionListener);
+        mIALocationManager.unregisterOrientationListener(mOrientationListener);
+
+        if (mWayfindingDestination != null) {
+            mIALocationManager.removeWayfindingUpdates();
+        }
     }
 
 
@@ -335,6 +404,87 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
             }
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, mloactionListener);
             locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 0, mloactionListener);
+        }
+    }
+
+    @Override
+    public void onMapClick(LatLng point) {
+        if (mMap != null) {
+
+            mWayfindingDestination = new IAWayfindingRequest.Builder()
+                    .withFloor(mFloor)
+                    .withLatitude(point.latitude)
+                    .withLongitude(point.longitude)
+                    .build();
+
+            mIALocationManager.requestWayfindingUpdates(mWayfindingDestination, mWayfindingListener);
+
+            if (mDestinationMarker == null) {
+                mDestinationMarker = mMap.addMarker(new MarkerOptions()
+                        .position(point)
+                        .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)));
+            } else {
+                mDestinationMarker.setPosition(point);
+            }
+            Log.d(TAG, "Set destination: (" + mWayfindingDestination.getLatitude() + ", " +
+                    mWayfindingDestination.getLongitude() + "), floor=" +
+                    mWayfindingDestination.getFloor());
+        }
+    }
+
+    private boolean hasArrivedToDestination(IARoute route) {
+        // empty routes are only returned when there is a problem, for example,
+        // missing or disconnected routing graph
+        if (route.getLegs().size() == 0) {
+            return false;
+        }
+
+        final double FINISH_THRESHOLD_METERS = 8.0;
+        double routeLength = 0;
+        for (IARoute.Leg leg : route.getLegs()) routeLength += leg.getLength();
+        return routeLength < FINISH_THRESHOLD_METERS;
+    }
+
+    private void clearRouteVisualization() {
+        for (Polyline pl : mPolylines) {
+            pl.remove();
+        }
+        mPolylines.clear();
+    }
+
+    private void updateRouteVisualization() {
+
+        clearRouteVisualization();
+
+        if (mCurrentRoute == null) {
+            return;
+        }
+
+        for (IARoute.Leg leg : mCurrentRoute.getLegs()) {
+
+            if (leg.getEdgeIndex() == null) {
+                // Legs without an edge index are, in practice, the last and first legs of the
+                // route. They connect the destination or current location to the routing graph.
+                // All other legs travel along the edges of the routing graph.
+
+                // Omitting these "artificial edges" in visualization can improve the aesthetics
+                // of the route. Alternatively, they could be visualized with dashed lines.
+                continue;
+            }
+
+            PolylineOptions opt = new PolylineOptions();
+            opt.add(new LatLng(leg.getBegin().getLatitude(), leg.getBegin().getLongitude()));
+            opt.add(new LatLng(leg.getEnd().getLatitude(), leg.getEnd().getLongitude()));
+
+            // Here wayfinding path in different floor than current location is visualized in
+            // a semi-transparent color
+            if (leg.getBegin().getFloor() == mFloor && leg.getEnd().getFloor() == mFloor) {
+                opt.color(0xFF0000FF);
+            } else {
+                opt.color(0x300000FF);
+            }
+
+            mPolylines.add(mMap.addPolyline(opt));
         }
     }
 }
